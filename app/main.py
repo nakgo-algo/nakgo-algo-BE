@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 import logging
 
@@ -5,11 +6,12 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.database import Base, SessionLocal, engine
 from app.core.middleware import GlobalRateLimitMiddleware, RequestSizeLimitMiddleware, SecurityHeadersMiddleware
-from app.routers import auth, fish, fines, points, posts, profile, regulations, reports, zones
+from app.routers import auth, fish, fines, notifications, points, posts, profile, regulations, reports, zones
 from app.services.seed import seed_reference_data
 from app.services.token_service import cleanup_expired_tokens
 
@@ -74,5 +76,10 @@ app.include_router(regulations.router, prefix=settings.api_prefix)
 app.include_router(fines.router, prefix=settings.api_prefix)
 app.include_router(points.router, prefix=settings.api_prefix)
 app.include_router(posts.router, prefix=settings.api_prefix)
+app.include_router(notifications.router, prefix=settings.api_prefix)
 app.include_router(reports.router, prefix=settings.api_prefix)
 app.include_router(zones.router, prefix=settings.api_prefix)
+
+uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
+os.makedirs(uploads_dir, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")

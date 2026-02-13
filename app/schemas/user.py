@@ -8,3 +8,11 @@ class UserPublic(BaseModel):
     nickname: str
     email: str | None = None
     profileImage: str | None = Field(default=None, alias="profile_image")
+    isAdmin: bool = False
+
+    @classmethod
+    def model_validate(cls, obj, **kwargs):
+        instance = super().model_validate(obj, **kwargs)
+        if hasattr(obj, "role"):
+            instance.isAdmin = obj.role == "admin"
+        return instance

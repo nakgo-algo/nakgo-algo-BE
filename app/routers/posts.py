@@ -1,10 +1,14 @@
-from fastapi import APIRouter, Depends
+import os
+import uuid
+
+from fastapi import APIRouter, Depends, File, Form, UploadFile
+from pydantic import BaseModel
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.core.errors import forbidden, not_found
+from app.core.errors import bad_request, forbidden, not_found
 from app.models import Comment, Post, User
 from app.schemas.common import SuccessResponse
 from app.schemas.post import (
@@ -14,6 +18,9 @@ from app.schemas.post import (
     PostDetailResponse,
     PostListItem,
 )
+
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -52,12 +59,29 @@ def list_posts(search: str | None = None, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=PostListItem, status_code=201)
-def create_post(
-    payload: PostCreateRequest,
+async def create_post(
+    title: str = Form(...),
+    content: str = Form(...),
+    image: UploadFile | None = File(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    row = Post(user_id=current_user.id, title=payload.title, content=payload.content)
+    if not title.strip() or not content.strip():
+        raise bad_request("제목과 내용을 입력해주세요.", "EMPTY_FIELDS")
+
+    image_path = None
+    if image and image.filename:
+        ext = os.path.splitext(image.filename)[1].lower()
+        if ext not in (".jpg", ".jpeg", ".png", ".gif", ".webp"):
+            raise bad_request("지원하지 않는 이미지 형식입니다.", "INVALID_IMAGE_TYPE")
+        filename = f"{uuid.uuid4().hex}{ext}"
+        filepath = os.path.join(UPLOAD_DIR, filename)
+        data = await image.read()
+        with open(filepath, "wb") as f:
+            f.write(data)
+        image_path = f"/uploads/{filename}"
+
+    row = Post(user_id=current_user.id, title=title.strip(), content=content.strip(), image=image_path)
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -113,9 +137,40 @@ def delete_post(
     post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         raise not_found("게시글을 찾을 수 없습니다.", "POST_NOT_FOUND")
-    if post.user_id != current_user.id:
+    if post.user_id != current_user.id and current_user.role != "admin":
         raise forbidden("본인 게시글만 삭제할 수 있습니다.", "POST_DELETE_FORBIDDEN")
 
+    db.delete(post)
+    db.commit()
+    return SuccessResponse(success=True)
+
+
+class AdminDeleteRequest(BaseModel):
+    reason: str = ""
+
+
+@router.put("/{post_id}/admin-delete", response_model=SuccessResponse)
+def admin_delete_post(
+    post_id: int,
+    payload: AdminDeleteRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.role != "admin":
+        raise forbidden("관리자 권한이 필요합니다.", "ADMIN_REQUIRED")
+
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise not_found("게시글을 찾을 수 없습니다.", "POST_NOT_FOUND")
+
+    from app.models import Notification
+    notification = Notification(
+        user_id=post.user_id,
+        type="post_deleted",
+        title="게시글이 삭제되었습니다",
+        message=f"'{post.title}' 게시글이 관리자에 의해 삭제되었습니다. 사유: {payload.reason or '규정 위반'}",
+    )
+    db.add(notification)
     db.delete(post)
     db.commit()
     return SuccessResponse(success=True)
