@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.database import Base, SessionLocal, engine
 from app.core.middleware import GlobalRateLimitMiddleware, RequestSizeLimitMiddleware, SecurityHeadersMiddleware
-from app.routers import auth, fish, fines, notifications, points, posts, profile, regulations, reports, zones
+from app.routers import auth, fish, fines, moderation, notifications, points, posts, profile, regulations, reports, zones
 from app.services.seed import seed_reference_data
 from app.services.token_service import cleanup_expired_tokens
 
@@ -78,6 +78,7 @@ app.include_router(points.router, prefix=settings.api_prefix)
 app.include_router(posts.router, prefix=settings.api_prefix)
 app.include_router(notifications.router, prefix=settings.api_prefix)
 app.include_router(reports.router, prefix=settings.api_prefix)
+app.include_router(moderation.router, prefix=settings.api_prefix)
 app.include_router(zones.router, prefix=settings.api_prefix)
 
 uploads_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")

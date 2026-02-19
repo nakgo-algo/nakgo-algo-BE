@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 60
     refresh_token_expire_days: int = 30
 
-    cors_allow_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    cors_allow_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000", "https://nakgo-algo-fe.vercel.app"]
     cors_allow_credentials: bool = True
 
     max_request_size_bytes: int = 5 * 1024 * 1024

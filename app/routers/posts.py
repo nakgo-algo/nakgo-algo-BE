@@ -1,3 +1,4 @@
+import json
 import os
 import uuid
 
@@ -9,8 +10,10 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.errors import bad_request, forbidden, not_found
-from app.models import Comment, Post, User
+from app.models import Comment, Notification, Post, User
+from app.models.moderation import ModerationRequest
 from app.schemas.common import SuccessResponse
+from app.services.content_filter import check_content
 from app.schemas.post import (
     CommentCreateRequest,
     CommentItem,
@@ -85,6 +88,24 @@ async def create_post(
     db.add(row)
     db.commit()
     db.refresh(row)
+
+    is_flagged, reason, matched_words = check_content(row.title, row.content)
+    if is_flagged:
+        mr = ModerationRequest(
+            post_id=row.id,
+            reason=reason,
+            matched_words=json.dumps(matched_words, ensure_ascii=False),
+        )
+        db.add(mr)
+        admins = db.query(User).filter(User.role == "admin").all()
+        for admin in admins:
+            db.add(Notification(
+                user_id=admin.id,
+                type="moderation_request",
+                title="게시글 검토 요청",
+                message=f"'{row.title}' 게시글에서 부적절한 표현이 감지되었습니다.",
+            ))
+        db.commit()
 
     return PostListItem(
         id=row.id,
@@ -163,7 +184,6 @@ def admin_delete_post(
     if not post:
         raise not_found("게시글을 찾을 수 없습니다.", "POST_NOT_FOUND")
 
-    from app.models import Notification
     notification = Notification(
         user_id=post.user_id,
         type="post_deleted",

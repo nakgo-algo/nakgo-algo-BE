@@ -1,5 +1,6 @@
 from app.models.comment import Comment
 from app.models.fine import Fine
+from app.models.moderation import ModerationRequest
 from app.models.notification import Notification
 from app.models.fish_species import FishSpecies
 from app.models.point import Point
@@ -14,6 +15,7 @@ from app.models.zone import Zone
 __all__ = [
     "Comment",
     "Fine",
+    "ModerationRequest",
     "Notification",
     "FishSpecies",
     "Point",
