@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 60
     refresh_token_expire_days: int = 30
 
+    kakao_rest_key: str = ""
+
     cors_allow_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000", "https://benevolent-tartufo-dc11ca.netlify.app"]
     cors_allow_credentials: bool = True
 

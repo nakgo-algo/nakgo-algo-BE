@@ -35,6 +35,27 @@ def _as_optional_str(value: object) -> str | None:
     return value if isinstance(value, str) else None
 
 
+async def _exchange_kakao_code(code: str, redirect_uri: str) -> str:
+    """authorization code → access_token 교환 (서버 사이드)"""
+    from app.core.config import settings
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(
+            "https://kauth.kakao.com/oauth/token",
+            data={
+                "grant_type": "authorization_code",
+                "client_id": settings.kakao_rest_key,
+                "redirect_uri": redirect_uri,
+                "code": code,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+    token_data = response.json()
+    if "access_token" not in token_data:
+        error_desc = token_data.get("error_description", token_data.get("error", "unknown"))
+        raise bad_request(f"카카오 인증 코드 교환 실패: {error_desc}", "KAKAO_CODE_EXCHANGE_FAILED")
+    return token_data["access_token"]
+
+
 async def _fetch_kakao_user(access_token: str) -> dict[str, object]:
     headers = {"Authorization": f"Bearer {access_token}"}
     async with httpx.AsyncClient(timeout=8.0) as client:
@@ -53,8 +74,16 @@ async def kakao_login(payload: KakaoLoginRequest, request: Request, db: Session 
     except PermissionError:
         raise forbidden("로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.", "KAKAO_LOGIN_BLOCKED")
 
+    # code가 있으면 서버에서 직접 토큰 교환
+    if payload.code and payload.redirectUri:
+        access_token = await _exchange_kakao_code(payload.code, payload.redirectUri)
+    elif payload.accessToken:
+        access_token = payload.accessToken
+    else:
+        raise bad_request("accessToken 또는 code + redirectUri가 필요합니다.", "MISSING_AUTH_PARAMS")
+
     try:
-        kakao_user = await _fetch_kakao_user(payload.accessToken)
+        kakao_user = await _fetch_kakao_user(access_token)
     except HTTPException as exc:
         if isinstance(exc.detail, dict) and exc.detail.get("code") == "KAKAO_AUTH_FAILED":
             kakao_login_guard.record_failure(client_ip)

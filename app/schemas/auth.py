@@ -4,7 +4,9 @@ from app.schemas.user import UserPublic
 
 
 class KakaoLoginRequest(BaseModel):
-    accessToken: str
+    accessToken: str | None = None
+    code: str | None = None
+    redirectUri: str | None = None
 
 
 class AuthResponse(BaseModel):
