@@ -1,7 +1,10 @@
+import logging
 from datetime import datetime
 from typing import cast
 
 import httpx
+
+logger = logging.getLogger(__name__)
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
@@ -75,22 +78,24 @@ async def kakao_login(payload: KakaoLoginRequest, request: Request, db: Session 
         raise forbidden("로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.", "KAKAO_LOGIN_BLOCKED")
 
     # code가 있으면 서버에서 직접 토큰 교환
-    if payload.code and payload.redirectUri:
-        access_token = await _exchange_kakao_code(payload.code, payload.redirectUri)
-    elif payload.accessToken:
-        access_token = payload.accessToken
-    else:
-        raise bad_request("accessToken 또는 code + redirectUri가 필요합니다.", "MISSING_AUTH_PARAMS")
-
     try:
+        if payload.code and payload.redirectUri:
+            access_token = await _exchange_kakao_code(payload.code, payload.redirectUri)
+        elif payload.accessToken:
+            access_token = payload.accessToken
+        else:
+            raise bad_request("accessToken 또는 code + redirectUri가 필요합니다.", "MISSING_AUTH_PARAMS")
+
         kakao_user = await _fetch_kakao_user(access_token)
-    except HTTPException as exc:
-        if isinstance(exc.detail, dict) and exc.detail.get("code") == "KAKAO_AUTH_FAILED":
-            kakao_login_guard.record_failure(client_ip)
+    except HTTPException:
         raise
-    except httpx.HTTPError:
+    except httpx.HTTPError as exc:
         kakao_login_guard.record_failure(client_ip)
+        logger.exception("카카오 API 통신 오류: %s", exc)
         raise unauthorized("카카오 인증 서버 연결에 실패했습니다.", "KAKAO_UPSTREAM_ERROR")
+    except Exception as exc:
+        logger.exception("카카오 로그인 처리 중 예외: %s", exc)
+        raise bad_request(f"카카오 로그인 오류: {type(exc).__name__}: {exc}", "KAKAO_LOGIN_ERROR")
 
     kakao_id = str(kakao_user.get("id", ""))
     if not kakao_id:
