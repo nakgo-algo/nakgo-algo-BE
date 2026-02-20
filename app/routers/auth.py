@@ -97,33 +97,39 @@ async def kakao_login(payload: KakaoLoginRequest, request: Request, db: Session 
         logger.exception("카카오 로그인 처리 중 예외: %s", exc)
         raise bad_request(f"카카오 로그인 오류: {type(exc).__name__}: {exc}", "KAKAO_LOGIN_ERROR")
 
-    kakao_id = str(kakao_user.get("id", ""))
-    if not kakao_id:
-        raise bad_request("카카오 사용자 정보를 가져오지 못했습니다.", "KAKAO_USER_INFO_INVALID")
+    try:
+        kakao_id = str(kakao_user.get("id", ""))
+        if not kakao_id:
+            raise bad_request("카카오 사용자 정보를 가져오지 못했습니다.", "KAKAO_USER_INFO_INVALID")
 
-    account = cast(dict[str, object], kakao_user.get("kakao_account", {}))
-    properties = cast(dict[str, object], kakao_user.get("properties", {}))
+        account = cast(dict[str, object], kakao_user.get("kakao_account", {}))
+        properties = cast(dict[str, object], kakao_user.get("properties", {}))
 
-    email = _as_optional_str(account.get("email"))
-    nickname = _as_optional_str(properties.get("nickname")) or f"kakao_{kakao_id[-6:]}"
-    profile_image = _as_optional_str(properties.get("profile_image"))
+        email = _as_optional_str(account.get("email"))
+        nickname = _as_optional_str(properties.get("nickname")) or f"kakao_{kakao_id[-6:]}"
+        profile_image = _as_optional_str(properties.get("profile_image"))
 
-    user = db.query(User).filter(User.kakao_id == kakao_id).first()
-    if not user:
-        user = User(kakao_id=kakao_id, email=email, nickname=nickname, profile_image=profile_image)
-        db.add(user)
-    else:
-        user.email = email
-        user.nickname = nickname
-        user.profile_image = profile_image
+        user = db.query(User).filter(User.kakao_id == kakao_id).first()
+        if not user:
+            user = User(kakao_id=kakao_id, email=email, nickname=nickname, profile_image=profile_image)
+            db.add(user)
+        else:
+            user.email = email
+            user.nickname = nickname
+            user.profile_image = profile_image
 
-    db.commit()
-    db.refresh(user)
-    kakao_login_guard.record_success(client_ip)
+        db.commit()
+        db.refresh(user)
+        kakao_login_guard.record_success(client_ip)
 
-    token = create_access_token(subject=str(user.id))
-    refresh_token = create_refresh_token(db, user.id)
-    return AuthResponse(token=token, refreshToken=refresh_token, user=UserPublic.model_validate(user))
+        token = create_access_token(subject=str(user.id))
+        refresh_token = create_refresh_token(db, user.id)
+        return AuthResponse(token=token, refreshToken=refresh_token, user=UserPublic.model_validate(user))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("DB/JWT 처리 중 예외: %s", exc)
+        raise bad_request(f"로그인 처리 오류: {type(exc).__name__}: {exc}", "LOGIN_PROCESS_ERROR")
 
 
 @router.post("/refresh", response_model=RefreshResponse)
